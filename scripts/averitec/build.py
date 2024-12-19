@@ -5,7 +5,7 @@ from infact.tools.search.knowledge_base import KnowledgeBase
 
 if __name__ == '__main__':  # KB building uses multiprocessing
     print("Starting to build the AVeriTeC Knowledge Bases...")
-    for variant in ["dev", "train", "test"]:
+    for variant in ["dev"]:
         kb = KnowledgeBase(variant)
 
         # Run sanity check

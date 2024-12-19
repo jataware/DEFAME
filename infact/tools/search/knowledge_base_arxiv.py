@@ -1,3 +1,8 @@
+"""
+This file contains the ArxivKnowledgeBase class, which is used to build and search the arXiv Knowledge Base.
+Download the arXiv dataset from https://www.kaggle.com/datasets/Cornell-University/arxiv and place in data/arxiv/arxiv-metadata-oai-snapshot.json
+"""
+
 from pathlib import Path
 import os
 import json
@@ -11,6 +16,7 @@ from datetime import datetime
 from rich import print
 import logging
 import pickle
+from infact.tools.search.knowledge_base import KnowledgeBase, SearchResult
 
 class ArxivKnowledgeBase:
     """The arXiv Knowledge Base (KB) used to retrieve relevant papers."""
@@ -19,6 +25,8 @@ class ArxivKnowledgeBase:
 
     def __init__(
         self,
+        variant: str = "arxiv",
+        logger = None,
         data_base_dir: str    = "data/",
         embedding_model: str  = "Alibaba-NLP/gte-base-en-v1.5",
         device: Optional[str] = None
@@ -45,10 +53,11 @@ class ArxivKnowledgeBase:
         self.index = None
         self.metadata = self._load_or_init_metadata()
         
-        if not self._is_built():
-            self._build()
-        else:
+        # Now load or build after all attributes are initialized
+        if self._is_built():
             self._load()
+        else:
+            self._build()
             
     def _load_or_init_metadata(self) -> Dict:
         if self.metadata_path.exists():
@@ -199,41 +208,28 @@ class ArxivKnowledgeBase:
             res = faiss.StandardGpuResources()
             self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
 
-    def search(self, query: str, limit: int = 10) -> List[Dict]:
-        """
-        Search for papers using the query.
-        
-        Args:
-            query: The search query
-            limit: Maximum number of results to return
-            
-        Returns:
-            List of dictionaries containing paper id, abstract, and search score
-        """
+    def _call_api(self, query: str, limit: int) -> List[SearchResult]:
+        """Match parent class search interface"""
         query_embedding = self._embed(query).reshape(1, -1)
         D, I = self.index.search(query_embedding, limit)
         
         results = []
-        for idx, (distance, paper_idx) in enumerate(zip(D[0], I[0])):
+        for i, (distance, paper_idx) in enumerate(zip(D[0], I[0])):
             if paper_idx < len(self.metadata['paper_ids']):
                 paper_id = self.metadata['paper_ids'][paper_idx]
-                _, abstract, _ = self.retrieve(paper_id)
-                if abstract:
-                    results.append({
-                        'id': paper_id,
-                        'abstract': abstract,
-                        'score': float(distance)
-                    })
-
+                url, text, date = self.retrieve(paper_id)
+                if text:
+                    results.append(SearchResult(
+                        source=url,
+                        text=text,
+                        query=query,
+                        rank=i,
+                        date=date
+                    ))
         return results
 
-    def retrieve(self, paper_id: str) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
-        """
-        Retrieve a specific paper by ID.
-        
-        Returns:
-            Tuple of (paper_id, abstract, datetime) or (None, None, None) if not found
-        """
+    def retrieve(self, paper_id: str) -> Tuple[str, str, Optional[datetime]]:
+        """Match parent class retrieve interface"""
         with open(self.src_data_path, 'r') as f:
             for line in f:
                 paper = json.loads(line)
