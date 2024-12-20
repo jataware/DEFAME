@@ -25,11 +25,11 @@ class EmbeddingModel:
                    texts: list[str],
                    to_bytes: bool = False,
                    truncate: bool = True,
-                   batch_size: int = 8) -> Sequence:
+                   batch_size: int = 16) -> Sequence:
         if len(texts) == 0:
             return []
         texts = self.truncate_many(texts) if truncate else texts
-        embedded = self.model.encode(texts, show_progress_bar=False, batch_size=batch_size)
+        embedded = self.model.encode(texts, show_progress_bar=True, batch_size=batch_size)
         return [e.tobytes() for e in embedded] if to_bytes else embedded
 
     def truncate(self, text: str) -> str:

@@ -60,20 +60,26 @@ class ArxivKnowledgeBase:
             self._build()
             
     def _load_or_init_metadata(self) -> Dict:
+        """Load existing metadata or initialize new metadata including paper ID scanning."""
         if self.metadata_path.exists():
             with open(self.metadata_path, 'rb') as f:
-                metadata = pickle.load(f)
-                # Add last_chunk_id if it doesn't exist in older metadata
-                if 'last_chunk_id' not in metadata:
-                    metadata['last_chunk_id'] = -1
-                return metadata
-        return {
-            'processed_papers': 0,
-            'paper_ids': [],
-            'total_papers': 0,
+                return pickle.load(f)
+        
+        metadata = {
+            'processed_paper_ids': set(),
+            'embedding_to_id': [],  # List maintaining exact order of embeddings in FAISS index
             'dimension': self.model.get_sentence_embedding_dimension(),
-            'last_chunk_id': -1
+            'all_paper_ids': set()  # Store all valid paper IDs
         }
+        
+        print("Scanning source file for paper IDs...")
+        with open(self.src_data_path, 'r') as f:
+            for line in f:
+                paper = json.loads(line)
+                if 'abstract' in paper and paper['abstract']:
+                    metadata['all_paper_ids'].add(paper['id'])
+        
+        return metadata
 
     def _save_metadata(self):
         with open(self.metadata_path, 'wb') as f:
@@ -100,16 +106,14 @@ class ArxivKnowledgeBase:
         """Check if the knowledge base is fully built and contains all papers."""
         if not (self.index_path.exists() and self.metadata_path.exists()):
             return False
-            
-        # Count total papers in source file
-        with open(self.src_data_path, 'r') as f:
-            total_papers = sum(1 for _ in f)
-            
-        # Load index to check its size
+        
         try:
             index = faiss.read_index(str(self.index_path))
-            print("total_papers", total_papers, "index.ntotal", index.ntotal, "processed_papers", self.metadata['processed_papers'], "len(paper_ids)", len(self.metadata['paper_ids']))
-            return index.ntotal == total_papers
+            # Verify index size matches our embedding_to_id list
+            if index.ntotal != len(self.metadata['embedding_to_id']):
+                return False
+            # Verify we've processed all papers
+            return len(self.metadata['processed_paper_ids']) == len(self.metadata['all_paper_ids'])
         except Exception as e:
             logging.error(f"Error reading index: {e}")
             return False
@@ -120,86 +124,82 @@ class ArxivKnowledgeBase:
 
     def _embed_many(self, texts: List[str]) -> np.ndarray:
         """Embed multiple texts efficiently."""
-        return self.model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
+        return self.model.encode(texts, normalize_embeddings=True, show_progress_bar=True, batch_size=32)
 
     def _build(self):
         """Creates the FAISS index for the arXiv abstracts."""
         print("Building the arXiv knowledge base...")
         
-        # Count total papers if not already counted
-        with open(self.src_data_path, 'r') as f:
-            self.metadata['total_papers'] = sum(1 for _ in f)
-            self._save_metadata()
-
+        # Calculate papers to process using set difference
+        papers_to_process_ids = self.metadata['all_paper_ids'] - self.metadata['processed_paper_ids']
+        
+        if not papers_to_process_ids:
+            print("No new papers to process.")
+            return
+        
+        print(f"Processing {len(papers_to_process_ids)} new papers...")
+        
+        # Create lookup set for faster membership testing
+        papers_to_process_set = set(papers_to_process_ids)
+        papers_chunk = []
+        
         # Initialize or load existing FAISS index
         if self.index_path.exists():
             print("Loading existing index...")
             self.index = faiss.read_index(str(self.index_path))
-            if torch.cuda.is_available():
-                res = faiss.StandardGpuResources()
-                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
-        elif self.index is None:
+        else:
             self.index = faiss.IndexFlatL2(self.metadata['dimension'])
-            if torch.cuda.is_available():
-                res = faiss.StandardGpuResources()
-                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+        
+        if torch.cuda.is_available():
+            res = faiss.StandardGpuResources()
+            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
 
-        # Outer Chunking Loop
-        total_chunks = (self.metadata['total_papers'] + self.CHUNK_SIZE - 1) // self.CHUNK_SIZE
-        with tqdm(total=total_chunks, desc="Overall Progress") as pbar:
-            # Update progress bar for already processed chunks
-            start_chunk = self.metadata['last_chunk_id'] + 1
-            pbar.update(start_chunk)
-
-            # Individual Chunk Loop
-            for chunk_id, start_idx in enumerate(range(start_chunk * self.CHUNK_SIZE, self.metadata['total_papers'], self.CHUNK_SIZE), start=start_chunk):
-                # Check for existing checkpoint
-                checkpoint = self._load_checkpoint(chunk_id)
-                if checkpoint is not None:
-                    print(f"Resuming from checkpoint {chunk_id}")
-                    embeddings = checkpoint['embeddings']
-                    paper_ids = checkpoint['paper_ids']
-                else:
-                    end_idx = min(start_idx + self.CHUNK_SIZE, self.metadata['total_papers'])
-                    papers = []
-                    paper_ids = []
-                    
-                    with open(self.src_data_path, 'r') as f:
-                        for i, line in enumerate(f):
-                            if i >= start_idx and i < end_idx:
-                                paper = json.loads(line)
-                                if 'abstract' in paper and paper['abstract']:
-                                    papers.append(paper['abstract'])
-                                    paper_ids.append(paper['id'])
-
-                    embeddings = self._embed_many(papers)
-                    self._save_checkpoint(chunk_id, embeddings, paper_ids)
-
-                # Add to index
-                self.index.add(embeddings)
-                self.metadata['paper_ids'].extend(paper_ids)
-                self.metadata['processed_papers'] += len(paper_ids)
-                self._save_metadata()
-                pbar.update(1)
-
-                # Clean up checkpoint after successful processing
-                checkpoint_path = self.checkpoint_dir / f"checkpoint_{chunk_id}.pkl"
-                if checkpoint_path.exists():
-                    checkpoint_path.unlink()
-
-                # Save index after each chunk
-                if torch.cuda.is_available():
-                    index_cpu = faiss.index_gpu_to_cpu(self.index)
-                else:
-                    index_cpu = self.index
-                faiss.write_index(index_cpu, str(self.index_path))
-
-                # Update metadata with last processed chunk
-                self.metadata['last_chunk_id'] = chunk_id
-                self._save_metadata()
-                pbar.update(1)
+        total_papers = sum(1 for line in open(self.src_data_path, 'r'))
+        with tqdm(total=len(papers_to_process_ids), desc="Processing papers") as pbar:
+            with open(self.src_data_path, 'r') as f:
+                for line in tqdm(f, total=total_papers, desc="Scanning file", leave=False):
+                    paper = json.loads(line)
+                    if paper['id'] in papers_to_process_set:
+                        papers_chunk.append(paper)
+                        
+                        # Process when chunk is full
+                        if len(papers_chunk) >= self.CHUNK_SIZE:
+                            self._process_chunk(papers_chunk)
+                            pbar.update(len(papers_chunk))
+                            papers_chunk = []
+                
+                # Process remaining papers
+                if papers_chunk:
+                    self._process_chunk(papers_chunk)
+                    pbar.update(len(papers_chunk))
 
         print("[green]Successfully built the arXiv knowledge base![/green]")
+
+    def _process_chunk(self, papers: List[Dict]):
+        """Process a chunk of papers and add to index."""
+        # Move index to CPU before embedding to free GPU memory
+        if torch.cuda.is_available():
+            index_cpu = faiss.index_gpu_to_cpu(self.index)
+            self.index = index_cpu
+
+        # Do embeddings with freed GPU memory
+        abstracts  = [paper['abstract'] for paper in papers]
+        paper_ids  = [paper['id'] for paper in papers]
+        embeddings = self._embed_many(abstracts)
+        
+        # Add embeddings on CPU
+        self.index.add(embeddings)
+        
+        # Save metadata and index while on CPU
+        self.metadata['embedding_to_id'].extend(paper_ids)
+        self.metadata['processed_paper_ids'].update(paper_ids)
+        self._save_metadata()
+        faiss.write_index(self.index, str(self.index_path))
+        
+        # Move back to GPU for next operations if needed
+        if torch.cuda.is_available():
+            res = faiss.StandardGpuResources()
+            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
 
     def _load(self):
         """Load the FAISS index."""
@@ -214,18 +214,18 @@ class ArxivKnowledgeBase:
         D, I = self.index.search(query_embedding, limit)
         
         results = []
-        for i, (distance, paper_idx) in enumerate(zip(D[0], I[0])):
-            if paper_idx < len(self.metadata['paper_ids']):
-                paper_id = self.metadata['paper_ids'][paper_idx]
-                url, text, date = self.retrieve(paper_id)
-                if text:
-                    results.append(SearchResult(
-                        source=url,
-                        text=text,
-                        query=query,
-                        rank=i,
-                        date=date
-                    ))
+        for i, (distance, idx) in enumerate(zip(D[0], I[0])):
+            # Use direct lookup from embedding index to paper_id
+            paper_id = self.metadata['embedding_to_id'][idx]
+            url, text, date = self.retrieve(paper_id)
+            if text:
+                results.append(SearchResult(
+                    source=url,
+                    text=text,
+                    query=query,
+                    rank=i,
+                    date=date
+                ))
         return results
 
     def retrieve(self, paper_id: str) -> Tuple[str, str, Optional[datetime]]:
