@@ -7,12 +7,14 @@ if __name__ == '__main__':  # evaluation uses multiprocessing
     set_start_method("spawn")
     evaluate(
         llm="gpt_4o",
-        tools_config=dict(searcher=dict(
-            search_engine_config=dict(
-                averitec_kb=dict(variant=variant),
-            ),
-            limit_per_search=5
-        )),
+        tools_config=dict(
+            searcher=dict(
+                search_engine_config=dict(
+                    averitec_kb=dict(variant=variant),
+                ),
+                limit_per_search=5
+            )
+        ),
         fact_checker_kwargs=dict(
             procedure_variant="infact",
             max_iterations=3,
