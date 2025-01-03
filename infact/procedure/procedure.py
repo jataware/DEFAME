@@ -33,6 +33,8 @@ class Procedure(ABC):
     ) -> list[SearchResult]:
         search_results = []
         for query in search_queries:
+            print("PROCEDURE query", query)
             evidence = self.actor.perform([query], doc=doc, summarize=summarize)[0]
+            print("PROCEDURE evidence", evidence)
             search_results.extend(evidence.results)
         return search_results

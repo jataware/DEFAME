@@ -25,9 +25,12 @@ class QABased(Procedure, ABC):
     def approach_question_batch(self, questions: list[str], doc: FCDocument) -> list:
         """Tries to answer the given list of questions. Unanswerable questions are dropped."""
         # Answer each question, one after another
+        print("approach question batch")
         q_and_a = []
         for question in questions:
+            print("question:", question)
             qa_instance = self.approach_question(question, doc)
+            print("qa_instance:", qa_instance)
             if qa_instance is not None:
                 q_and_a.append(qa_instance)
 
@@ -37,6 +40,7 @@ class QABased(Procedure, ABC):
                             f"Source URL: {triplet['url']}") for triplet in q_and_a]
         q_and_a_string = "## Initial Q&A\n" + "\n\n".join(q_and_a_strings)
         doc.add_reasoning(q_and_a_string)
+        print("q_and_a_string", q_and_a_string)
 
         return q_and_a
 
@@ -61,15 +65,18 @@ class QABased(Procedure, ABC):
 
         # Stage 3: Generate search queries
         queries = self.propose_queries_for_question(question, doc)
+        print("queries", queries)
         if len(queries) == 0:
             return None
 
         # Execute searches and gather all results
         search_results = self.retrieve_resources(queries)
-
+        print("search_results", search_results)
         # Step 4: Answer generation
         if len(search_results) > 0:
-            return self.generate_answer(question, search_results, doc)
+            answer = self.generate_answer(question, search_results, doc)
+            print("answer", answer)
+            return answer
 
     def answer_question(self,
                         question: str,

@@ -17,11 +17,13 @@ from rich import print
 import logging
 import pickle
 from infact.tools.search.knowledge_base import KnowledgeBase, SearchResult
+from infact.tools.search.local_search_api import LocalSearchAPI
 
-class ArxivKnowledgeBase:
+class ArxivKnowledgeBase(LocalSearchAPI):
     """The arXiv Knowledge Base (KB) used to retrieve relevant papers."""
     name = 'arxiv_kb'
     CHUNK_SIZE = 100_000
+    is_free = True
 
     def __init__(
         self,
@@ -31,6 +33,9 @@ class ArxivKnowledgeBase:
         embedding_model: str  = "Alibaba-NLP/gte-base-en-v1.5",
         device: Optional[str] = None
     ):
+        # Call parent class constructor
+        super().__init__(logger=logger)
+        
         # Setup paths and dirs
         self.kb_dir = Path(data_base_dir + "arxiv/knowledge_base/")
         self.src_data_path = data_base_dir + "arxiv/arxiv-metadata-oai-snapshot.json"
@@ -208,6 +213,9 @@ class ArxivKnowledgeBase:
             res = faiss.StandardGpuResources()
             self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
 
+    def _before_search(self, query: str):
+        return query
+        
     def _call_api(self, query: str, limit: int) -> List[SearchResult]:
         """Match parent class search interface"""
         query_embedding = self._embed(query).reshape(1, -1)

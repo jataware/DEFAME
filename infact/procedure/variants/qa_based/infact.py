@@ -10,11 +10,14 @@ class InFact(QABased):
 
     def apply_to(self, doc: FCDocument) -> (Label, dict[str, Any]):
         # Stage 1 & 2: Interpretation & Question posing
-        questions = self._pose_questions(no_of_questions=10, doc=doc)
+        print("DOING INFACT")
+        questions = self._pose_questions(no_of_questions=3, doc=doc)
 
+        print("questions", questions)
         # Stages 3 & 4: Search query generation and question answering
         q_and_a = self.approach_question_batch(questions, doc)
 
+        print("q_and_a", q_and_a)
         # Stage 5: Veracity prediction
         label = self.judge.judge(doc)
 

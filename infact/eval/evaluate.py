@@ -136,8 +136,17 @@ def evaluate(
         target_dir=logger.target_dir
     )
 
-    worker_args = (llm, llm_kwargs, fact_checker_kwargs,
-                   tools_config, logger_kwargs, is_averitec, input_queue, output_queue, devices_queue)
+    worker_args = (
+        llm, 
+        llm_kwargs, 
+        fact_checker_kwargs,
+        tools_config, 
+        logger_kwargs, 
+        is_averitec, 
+        input_queue, 
+        output_queue, 
+        devices_queue
+    )
 
     print(f"Evaluating {n_samples} samples using {n_workers} workers...")
 

@@ -131,9 +131,12 @@ class FactChecker:
 
         start = time.time()
         doc = FCDocument(claim)
+        print('doc', doc)
 
         # Depending on the specified procedure variant, perform the fact-check
         label, meta = self.procedure.apply_to(doc)
+        
+        print('label', label)
 
         # Finalize the fact-check
         doc.add_reasoning("## Final Judgement\n" + self.judge.get_latest_reasoning())
