@@ -1,9 +1,9 @@
 from infact.eval.evaluate_claim import evaluate_claim
 
 claims = [
-    "The transformer architecture was first introduced in 2017",
-    "BERT is based on the transformer architecture",
-    # Add more claims here as needed
+    # "The transformer architecture was first introduced in 2017",
+    # "BERT is based on the transformer architecture",
+    "Is there an mRNA cancer vaccine?"
 ]
 
 if __name__ == '__main__':

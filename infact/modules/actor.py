@@ -6,7 +6,7 @@ from infact.common.logger import Logger
 from infact.modules.result_summarizer import ResultSummarizer
 from infact.tools.tool import Tool
 
-
+from time import time
 class Actor:
     """Agent that executes given Actions and returns the resulted Evidence."""
 
@@ -22,9 +22,11 @@ class Actor:
 
     def _perform_single(self, action: Action, doc: FCDocument = None, summarize: bool = True) -> Evidence:
         tool = self.get_corresponding_tool_for_action(action)
+        start_time = time()
         results = tool.perform(action)
         if summarize:
             assert doc is not None
+            start_time = time()
             results = self.result_summarizer.summarize(results, doc)
         summary = ""
         return Evidence(summary, list(results))

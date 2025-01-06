@@ -18,6 +18,7 @@ import logging
 import pickle
 from infact.tools.search.knowledge_base import KnowledgeBase, SearchResult
 from infact.tools.search.local_search_api import LocalSearchAPI
+from time import time
 
 class ArxivKnowledgeBase(LocalSearchAPI):
     """The arXiv Knowledge Base (KB) used to retrieve relevant papers."""
@@ -72,17 +73,25 @@ class ArxivKnowledgeBase(LocalSearchAPI):
         
         metadata = {
             'processed_paper_ids': set(),
-            'embedding_to_id': [],  # List maintaining exact order of embeddings in FAISS index
+            'embedding_to_id': [],
             'dimension': self.model.get_sentence_embedding_dimension(),
-            'all_paper_ids': set()  # Store all valid paper IDs
+            'all_paper_ids': set(),
+            'paper_offsets': {}  # Add this to store offsets
         }
         
-        print("Scanning source file for paper IDs...")
+        print("Scanning source file for paper IDs and creating offset index...")
+        offset = 0
         with open(self.src_data_path, 'r') as f:
             for line in f:
                 paper = json.loads(line)
                 if 'abstract' in paper and paper['abstract']:
                     metadata['all_paper_ids'].add(paper['id'])
+                    metadata['paper_offsets'][paper['id']] = {
+                        'offset': offset,
+                        'abstract': paper['abstract'],
+                        'date': paper.get('update_date')
+                    }
+                offset += len(line)
         
         return metadata
 
@@ -135,7 +144,6 @@ class ArxivKnowledgeBase(LocalSearchAPI):
         """Creates the FAISS index for the arXiv abstracts."""
         print("Building the arXiv knowledge base...")
         
-        # Calculate papers to process using set difference
         papers_to_process_ids = self.metadata['all_paper_ids'] - self.metadata['processed_paper_ids']
         
         if not papers_to_process_ids:
@@ -143,12 +151,8 @@ class ArxivKnowledgeBase(LocalSearchAPI):
             return
         
         print(f"Processing {len(papers_to_process_ids)} new papers...")
-        
-        # Create lookup set for faster membership testing
         papers_to_process_set = set(papers_to_process_ids)
         papers_chunk = []
-        
-        # Initialize or load existing FAISS index
         if self.index_path.exists():
             print("Loading existing index...")
             self.index = faiss.read_index(str(self.index_path))
@@ -218,9 +222,12 @@ class ArxivKnowledgeBase(LocalSearchAPI):
         
     def _call_api(self, query: str, limit: int) -> List[SearchResult]:
         """Match parent class search interface"""
+        start_time = time()
         query_embedding = self._embed(query).reshape(1, -1)
+        start_time = time()
         D, I = self.index.search(query_embedding, limit)
         
+        start_time = time()
         results = []
         for i, (distance, idx) in enumerate(zip(D[0], I[0])):
             # Use direct lookup from embedding index to paper_id
@@ -237,10 +244,17 @@ class ArxivKnowledgeBase(LocalSearchAPI):
         return results
 
     def retrieve(self, paper_id: str) -> Tuple[str, str, Optional[datetime]]:
-        """Match parent class retrieve interface"""
+        """Retrieve paper details, first checking metadata, falling back to file if needed."""
+        paper_info = self.metadata['paper_offsets'].get(paper_id)
+        if not paper_info:
+            return None, None, None
+            
+        if paper_info['abstract'] is not None:
+            return paper_id, paper_info['abstract'], paper_info['date']
+            
+        # Fallback to reading from file if needed
         with open(self.src_data_path, 'r') as f:
-            for line in f:
-                paper = json.loads(line)
-                if paper['id'] == paper_id:
-                    return paper['id'], paper['abstract'], None
-        return None, None, None
+            f.seek(paper_info['offset'])
+            line = f.readline()
+            paper = json.loads(line)
+            return paper['id'], paper['abstract'], paper.get('update_date')
