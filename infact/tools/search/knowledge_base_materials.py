@@ -29,28 +29,37 @@ class MaterialsKnowledgeBase(LocalSearchAPI):
 
     def _get_full_text(self, article_url: str) -> Optional[str]:
         """Get full text content of an article."""
-        try:
-            response = requests.get(article_url, headers=self.headers)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            article_div = soup.find('div', class_='html-body')
-            
-            if not article_div:
-                return None
-
-            # Combine all relevant text content
-            text_content = []
-            for element in article_div.find_all(['p', 'h1', 'h2', 'h3', 'h4']):
-                if element.name.startswith('h'):
-                    text_content.append(f"\n{element.get_text().strip()}\n")
-                else:
-                    text_content.append(element.get_text().strip())
-            
-            return " ".join(text_content)
-        except requests.RequestException as e:
-            self.logger.error(f"Error fetching article: {e}")
+        response = requests.get(article_url, headers=self.headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        article_div = soup.find('div', class_='html-body')
+        
+        if not article_div:
             return None
+
+        # Process all elements
+        formatted_text = []
+        current_section = None
+        
+        for element in article_div.find_all(['h1', 'h2', 'h3', 'h4', 'p', 'div']):
+            # Skip certain div classes
+            if element.name == 'div' and element.get('class') and any(c in ['figure', 'table', 'references'] for c in element.get('class')):
+                continue
+                
+            text = element.get_text().strip()
+            if not text:
+                continue
+                
+            # If it's a header, update the current section
+            if element.name.startswith('h'):
+                current_section = text
+                formatted_text.append(f"\n## {text}\n")
+            # If it's content, add it under the current section
+            elif current_section and (element.name == 'p' or element.name == 'div'):
+                formatted_text.append(text)
+
+        return "\n".join(formatted_text)
 
     def _search_materials(self, query: str, page: int = 1) -> List[dict]:
         """Search MDPI Materials journal."""
@@ -103,19 +112,17 @@ class MaterialsKnowledgeBase(LocalSearchAPI):
                     break
                     
                 # Get full text for better context
-                # full_text = self._get_full_text(article['url'])
-                # text = full_text if full_text else article['abstract']
+                full_text = self._get_full_text(article['url'])
+                text = full_text if full_text else article['abstract']
                 
                 results.append(SearchResult(
                     source=article['url'],
-                    text=article['abstract'],
+                    text=text,
                     query=query,
                     rank=len(results),
                     date=None
                 ))
-            
-            page += 1
-        
+                    
         return results
 
     def _before_search(self, query: str) -> str:
