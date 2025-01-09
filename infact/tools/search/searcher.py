@@ -12,6 +12,7 @@ from infact.tools.search.query_serper import SerperAPI
 from infact.tools.search.search_api import SearchAPI
 from infact.tools.search.wiki_dump import WikiDumpAPI
 from infact.tools.search.knowledge_base_arxiv import ArxivKnowledgeBase
+from infact.tools.search.knowledge_base_materials import MaterialsKnowledgeBase
 from infact.tools.tool import Tool
 
 SEARCH_APIS = {
@@ -19,7 +20,8 @@ SEARCH_APIS = {
     "duckduckgo": DuckDuckGo,
     "wiki_dump": WikiDumpAPI,
     "averitec_kb": KnowledgeBase,
-    "arxiv_kb": ArxivKnowledgeBase
+    "arxiv_kb": ArxivKnowledgeBase,
+    "materials_kb": MaterialsKnowledgeBase
 }
 
 
@@ -60,7 +62,7 @@ class Searcher(Tool):
         available_apis = self.search_apis.keys()
         if "wiki_dump" in available_apis:
             actions.append(WikiDumpLookup)
-        if "google" in available_apis or "duckduckgo" in available_apis or "averitec_kb" in available_apis or "arxiv_kb" in available_apis:
+        if "google" in available_apis or "duckduckgo" in available_apis or "averitec_kb" in available_apis or "arxiv_kb" in available_apis or "materials_kb" in available_apis:
             actions.append(WebSearch)
         self.actions = actions
 
