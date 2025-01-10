@@ -10,9 +10,7 @@ class InFact(QABased):
 
     def apply_to(self, doc: FCDocument) -> (Label, dict[str, Any]):
         # Stage 1 & 2: Interpretation & Question posing
-        print("DOING INFACT")
-        questions = self._pose_questions(no_of_questions=3, doc=doc)
-        print("QUESTIONS:", questions)
+        questions = self._pose_questions(no_of_questions=5, doc=doc)
         
         # Stages 3 & 4: Search query generation and question answering
         q_and_a = self.approach_question_batch(questions, doc)

@@ -21,7 +21,7 @@ class AdvancedQA(QABased):
         while n_iterations < self.max_iterations:
             n_iterations += 1
 
-            questions = self._pose_questions(no_of_questions=4, doc=doc)
+            questions        = self._pose_questions(no_of_questions=4, doc=doc)
             new_qa_instances = self.approach_question_batch(questions, doc)
             q_and_a.extend(new_qa_instances)
 
@@ -29,7 +29,7 @@ class AdvancedQA(QABased):
                 break
 
         # Fill up QA with more questions
-        missing_questions = 10 - len(q_and_a)
+        missing_questions = 4 - len(q_and_a)
         if missing_questions > 0:
             questions = self._pose_questions(no_of_questions=missing_questions, doc=doc)
             new_qa_instances = self.approach_question_batch(questions, doc)

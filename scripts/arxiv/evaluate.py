@@ -29,14 +29,14 @@ if __name__ == '__main__':
             searcher=dict(
                 search_engine_config=dict(
                     #arxiv_kb=dict()
-                    materials_kb=dict()
+                    mdpi_kb=dict()
                 ),
-                limit_per_search=5,
+                limit_per_search=10,
             )
         ),
         fact_checker_kwargs=dict(
-            # procedure_variant="infact",
-            procedure_variant="advanced",
+            procedure_variant="infact",
+            # procedure_variant="advanced",
             max_iterations=3,
             max_result_len=64_000,  # characters
         ),

@@ -72,6 +72,7 @@ class FCDocument:
             doc_str += f"\n\n### Verdict: {self.verdict.name}"
         if self.justification:
             doc_str += f"\n\n### Justification\n{self.justification}"
+            
         return doc_str
 
     def add_reasoning(self, text: str):

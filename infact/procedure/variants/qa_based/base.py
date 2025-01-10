@@ -7,6 +7,7 @@ from infact.procedure.procedure import Procedure
 from infact.prompts.prompt import AnswerQuestion
 from infact.prompts.prompt import PoseQuestionsPrompt
 from infact.prompts.prompt import ProposeQueries, ProposeQueriesNoQuestions
+from infact.prompts.prompt import SelectBestResult
 from infact.utils.console import light_blue
 from infact.utils.parsing import extract_last_paragraph, find_code_span, strip_string
 
@@ -28,7 +29,7 @@ class QABased(Procedure, ABC):
         # Answer each question, one after another
         q_and_a = []
         for question in questions:
-            qa_instance = self.approach_question(question, doc)
+            qa_instance = self.approach_question_summarize(question, doc)
             if qa_instance is not None:
                 q_and_a.append(qa_instance)
 
@@ -59,20 +60,12 @@ class QABased(Procedure, ABC):
         """Tries to answer the given question. If unanswerable, returns None."""
         self.logger.log(light_blue(f"Answering question: {question}"))
         self.actor.reset()
-
-        # Stage 3: Generate search queries
         queries = self.propose_queries_for_question(question, doc)
         if len(queries) == 0:
-            print("NO QUERIES")
             return None
-
-        # Execute searches and gather all results
         search_results = self.retrieve_resources(queries)
-        print("NSEARCH RESULTS:", len(search_results))
-        # Step 4: Answer generation
         if len(search_results) > 0:
             answer = self.generate_answer(question, search_results, doc)
-            print("QUESTION:", question, "SEARCH RESULTS:", search_results, "ANSWER:", answer)
             return answer
 
     def answer_question(self,
@@ -122,6 +115,56 @@ class QABased(Procedure, ABC):
             except:
                 pass
 
+    def approach_question_summarize(self, question: str, doc: FCDocument = None) -> Optional[dict]:
+        """Tries to answer the given question using a summary-first approach. If unanswerable, returns None."""
+        self.logger.log(light_blue(f"Answering question (summary approach): {question}"))
+        self.actor.reset()
+        queries = self.propose_queries_for_question(question, doc)
+        if len(queries) == 0:
+            return None
+        
+        # Get initial search results
+        search_results = self.retrieve_resources(queries)
+        if len(search_results) == 0:
+            return None
+        
+        # Select the most promising result using summaries
+        selected_result = self.select_best_result(question, search_results[:10], doc)
+        if selected_result is None:
+            return None
+        
+        # Generate answer using only the selected result
+        answer = self.attempt_answer_question(question, selected_result, doc)
+        if answer is not None:
+            return {
+                "question": question,
+                "answer": answer,
+                "url": selected_result.source,
+                "scraped_text": selected_result.text
+            }
+        return None
+
+    def select_best_result(self, question: str, results: list[SearchResult], doc: FCDocument) -> Optional[SearchResult]:
+        """Selects the most promising result based on summaries."""
+        summaries = [
+            f"Result {i+1}:\n"
+            f"Title/Source: {r.source}\n"
+            f"Date: {r.date}\n"
+            f"Summary: {r.summary}\n"
+            for i, r in enumerate(results)
+        ]
+        
+        prompt = SelectBestResult(question, summaries, doc)  # You'll need to create this prompt class
+        response = self.llm.generate(prompt)
+        
+        try:
+            # Assuming the LLM responds with the result number (1-10)
+            selected_index = int(response.strip()) - 1
+            if 0 <= selected_index < len(results):
+                return results[selected_index]
+        except:
+            self.logger.log("WARNING: Could not parse selected result index")
+        return None
 
 def extract_queries(response: str) -> list[WebSearch]:
     matches = find_code_span(response)

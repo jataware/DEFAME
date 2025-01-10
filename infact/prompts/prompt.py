@@ -249,7 +249,7 @@ class AnswerQuestion(Prompt):
         placeholder_targets = {
             "[DOC]": doc,
             "[QUESTION]": question,
-            "[RESULT]": result,
+            "[RESULT]": result.text,
         }
         super().__init__(placeholder_targets)
 
@@ -304,5 +304,18 @@ class JudgeNaively(Prompt):
         placeholder_targets = {
             "[CLAIM]": claim,
             "[CLASSES]": class_str,
+        }
+        super().__init__(placeholder_targets)
+
+
+class SelectBestResult(Prompt):
+    """Used to select the most relevant search result based on summaries."""
+    template_file_path = "infact/prompts/select_best_result.md"
+
+    def __init__(self, question: str, summaries: list[str], doc: FCDocument):
+        placeholder_targets = {
+            "[QUESTION]": question,
+            "[DOC]": str(doc),
+            "[SUMMARIES]": "\n\n".join(summaries),
         }
         super().__init__(placeholder_targets)
